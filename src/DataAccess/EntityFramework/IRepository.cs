@@ -1,8 +1,10 @@
-﻿using System;
+﻿// File Access Error: Value does not fall within the expected range.
+// Could not find the Db Context file
+using System;
 using System.Linq;
 using System.Linq.Expressions;
 
-namespace DataAccess.Repository
+namespace DataAccess.Repository.EntityFramework
 { 
     public interface IRepositoryBase
     {

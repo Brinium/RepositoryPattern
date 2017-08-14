@@ -10,7 +10,7 @@ using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using DataAccess;
 
-namespace DataAccess.Repository
+namespace DataAccess.Repository.DapperContrib
 {
 	public class DbContextUnitOfWork : IUnitOfWork
 	{

@@ -182,7 +182,7 @@ namespace <#= NameSpace #>
 {
 	public interface IUnitOfWork
 	{
-		//IContext Context { get; }
+		DbContext Context { get; }
         string ConnectionString { get; set; }
         bool LazyLoadingEnabled { get; set; }
         bool ProxyCreationEnabled { get; set; }

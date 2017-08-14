@@ -2,11 +2,11 @@ using System.Data.Objects;
 using System.Collections.Generic;
 using System.Data.Entity;
 
-namespace DataAccess.Repository
+namespace DataAccess.Repository.EntityFramework
 {
 	public interface IUnitOfWork
 	{
-		//IContext Context { get; }
+		DbContext Context { get; }
         string ConnectionString { get; set; }
         bool LazyLoadingEnabled { get; set; }
         bool ProxyCreationEnabled { get; set; }

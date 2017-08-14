@@ -3,7 +3,7 @@ using System.Data.Entity;
 using System.Linq;
 using System.Linq.Expressions;
 
-namespace DataAccess.Repository
+namespace DataAccess.Repository.DapperContrib
 {
     public class DbContextRepository<T> : IRepository<T> where T : class
     {

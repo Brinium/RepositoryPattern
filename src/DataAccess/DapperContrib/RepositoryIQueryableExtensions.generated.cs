@@ -3,7 +3,7 @@ using System.Linq;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 
-namespace DataAccess.Repository
+namespace DataAccess.Repository.DapperContrib
 {
 	public static class RepositoryIQueryableExtensions
 	{

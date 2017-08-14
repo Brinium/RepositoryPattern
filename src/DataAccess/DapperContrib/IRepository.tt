@@ -1,0 +1,954 @@
+﻿<#@ template hostspecific="true" language="C#" debug="true"#>
+<#@ output extension=".cs" #>
+<#@ assembly name="System.Core" #>
+<#@ assembly name="EnvDTE"#>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="Microsoft.VisualStudio.TextTemplating" #>
+<#@ import namespace="EnvDTE"#>
+<#
+	//var input = System.IO.File.ReadAllText(Host.ResolvePath(@"..\DataAccess\ReposEFContext.cs"));
+	// Use the input itself - e.g. when reading an xml file to parse with xml parser
+    //this.WriteLine(input);
+
+	// Or use a FileCodeModel if the Input is a C# or VB File
+
+	string dbContextProject = "DataAccess";
+	string dbContextClass = "ReposEFContext";
+	string dbContextNamespace = "DataAccess";
+	string entityNamespace = "DataAccess.Entities";
+	string nameSpace = TemplateHelper.GetCustomToolNamespace(this.Host);
+	EnvDTE.ProjectItem dbContext  = null;
+	try
+	{
+		var contextProject = TemplateHelper.GetProject(dbContextProject, this.Host);
+		dbContext = TemplateHelper.GetProjectItem(contextProject, dbContextClass + ".cs", this.Host);
+	}
+	catch(Exception ex)
+	{
+		this.WriteLine("// File Access Error: " + ex.Message);
+	}
+
+	if(dbContext != null)
+    {
+        try 
+        {
+			var entities = DbContextAnalyser.GetDbSetEntities(dbContext);
+			var templateProject = TemplateHelper.GetTemplateProject(this.Host);
+			foreach (var entity in entities)
+			{
+				EntityRepositoryTemplate entityRepository = new EntityRepositoryTemplate(entity, nameSpace, entityNamespace);
+				TemplateHelper.SaveTemplateOutputToProject(entityRepository, templateProject, false);
+			}
+			IContextTemplate iContext = new IContextTemplate(nameSpace);
+			TemplateHelper.SaveTemplateOutputToTemplate(iContext, this.Host, true);
+
+			IUnitOfWorkTemplate iUnitOfwork = new IUnitOfWorkTemplate(nameSpace);
+			TemplateHelper.SaveTemplateOutputToTemplate(iUnitOfwork, this.Host, true);
+
+			ExceptionTemplate exceptions = new ExceptionTemplate(nameSpace);
+			TemplateHelper.SaveTemplateOutputToTemplate(exceptions, this.Host, true);
+
+			RepositoryIQueryableExtensionsTemplate extensions = new RepositoryIQueryableExtensionsTemplate(nameSpace);
+			TemplateHelper.SaveTemplateOutputToTemplate(extensions, this.Host, true);
+
+			RepositoryHelperTemplate repositoryHelper = new RepositoryHelperTemplate(entities, nameSpace, entityNamespace);
+			TemplateHelper.SaveTemplateOutputToTemplate(repositoryHelper, this.Host, true);
+
+			DbContextUnitOfWorkTemplate dbContextUnitOfWork = new DbContextUnitOfWorkTemplate(dbContextClass, dbContextNamespace, nameSpace);
+			TemplateHelper.SaveTemplateOutputToTemplate(dbContextUnitOfWork, this.Host, true);
+
+			DbContextRepositoryTemplate dbContextRepository = new DbContextRepositoryTemplate(nameSpace);
+			TemplateHelper.SaveTemplateOutputToTemplate(dbContextRepository, this.Host, true);
+        }
+		catch(Exception ex)
+		{
+			this.WriteLine("// File Writing Error: " + ex.Message);
+		}
+    }
+	else
+	{
+		this.WriteLine("// Could not find the Db Context file");
+    }
+
+	IRepositoryTemplate iRepository = new IRepositoryTemplate(nameSpace);
+	Write(iRepository.TransformText());
+#>
+
+<#+
+
+public class IRepositoryTemplate : TextTransformation
+{   
+    public string NameSpace { get; set; }
+
+    public IRepositoryTemplate (string nameSpace)
+    {
+		NameSpace = nameSpace;
+    }
+
+    public override string TransformText()
+    {
+#>
+using System;
+using System.Linq;
+using System.Linq.Expressions;
+
+namespace <#= NameSpace #>
+{ 
+    public interface IRepositoryBase
+    {
+        IUnitOfWork UnitOfWork { get; set; }
+        void AddObject(object entity);
+		void UpdateObject(object entity);
+    }
+
+    public interface IRepository<T> : IRepositoryBase where T : class
+	{
+		IQueryable<T> All();
+		IQueryable<T> Where(Expression<Func<T, bool>> expression);
+		T FirstOrDefault(Expression<Func<T, bool>> expression);
+		void Add(T entity);
+		void Delete(T entity);
+		void Delete(Expression<Func<T, bool>> expression);
+		void Update(T entity);
+	}
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class BaseTemplate :  TextTransformation
+{
+    public string FileName { get; set; }
+    public string NameSpace { get; set; }
+
+    public BaseTemplate (string fileName, string nameSpace)
+    {
+		FileName = fileName;
+		NameSpace = nameSpace;
+    }
+
+    public override string TransformText()
+    {
+		return this.GenerationEnvironment.ToString();
+	}
+}
+
+public class IContextTemplate : BaseTemplate
+{   
+	public IContextTemplate(string nameSpace)
+		: base("IContext.generated.cs", nameSpace)
+    {
+    }
+
+    public override string TransformText()
+    {
+#>
+using System.Data.Objects;
+using System.Collections.Generic;
+using System.Data.Entity;
+
+namespace <#= NameSpace #>
+{
+	public interface IContext
+	{
+        void Dispose();
+        DbSet<T> Set<T>() where T : class;
+	}
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class IUnitOfWorkTemplate : BaseTemplate
+{   
+	public IUnitOfWorkTemplate(string nameSpace)
+		: base("IUnitOfWork.generated.cs", nameSpace)
+    {
+    }
+
+    public override string TransformText()
+    {
+#>
+using System.Data.Objects;
+using System.Collections.Generic;
+using System.Data.Entity;
+
+namespace <#= NameSpace #>
+{
+	public interface IUnitOfWork
+	{
+		DbContext Context { get; }
+        string ConnectionString { get; set; }
+        bool LazyLoadingEnabled { get; set; }
+        bool ProxyCreationEnabled { get; set; }
+		void TestConnectionCanOpen();
+		void SaveChanges();
+		void DetachDatabase();
+		bool IsDatabaseSuspended();
+		void Dispose();
+	}
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class ExceptionTemplate : BaseTemplate
+{   
+	public ExceptionTemplate(string nameSpace)
+		: base("Exceptions.generated.cs", nameSpace)
+    {
+    }
+
+    public override string TransformText()
+    {
+#>
+using System;
+using System.Data.Entity;
+using System.Linq;
+using System.Linq.Expressions;
+
+namespace <#= NameSpace #>
+{
+    [System.Serializable]
+    public class ConcurrencyException : System.Exception
+    {
+        public ConcurrencyException() { }
+        public ConcurrencyException(string message) : base(message) { }
+        public ConcurrencyException(string message, System.Exception inner) : base(message, inner) { }
+        protected ConcurrencyException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
+    }
+	
+    [System.Serializable]
+    public class DataException : System.Exception
+    {
+        public DataException() { }
+        public DataException(string message) : base(message) { }
+        public DataException(string message, System.Exception inner) : base(message, inner) { }
+        protected DataException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
+    }
+	
+    [System.Serializable]
+    public class RepositoryAccessException : System.Exception
+    {
+        public RepositoryAccessException() { }
+        public RepositoryAccessException(string message) : base(message) { }
+        public RepositoryAccessException(string message, System.Exception inner) : base(message, inner) { }
+        protected RepositoryAccessException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
+    }
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class RepositoryIQueryableExtensionsTemplate : BaseTemplate
+{   
+	public RepositoryIQueryableExtensionsTemplate(string nameSpace)
+		: base("RepositoryIQueryableExtensions.generated.cs", nameSpace)
+    {
+    }
+
+    public override string TransformText()
+    {
+#>
+using System.Data.Objects;
+using System.Linq;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
+
+namespace <#= NameSpace #>
+{
+	public static class RepositoryIQueryableExtensions
+	{
+		public static IQueryable<T> Include<T>(this IQueryable<T> source, string path)
+		{
+            var dbQuery = source as DbQuery<T>;
+            if (dbQuery != null)
+            {
+                return dbQuery.Include(path);
+            }
+            else
+            {
+                var objectQuery = source as ObjectQuery<T>;
+                if (objectQuery != null)
+                {
+                    return objectQuery.Include(path);
+                }
+            }
+            return source;
+		}
+	}
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class RepositoryHelperTemplate : BaseTemplate
+{   
+    public IList<string> Entities { get; set; }
+    public string EntitiesNamespace { get; set; }
+	public RepositoryHelperTemplate(IList<string> entities, string nameSpace, string entitiesNamespace)
+		: base("RepositoryHelper.generated.cs", nameSpace)
+    {
+		Entities = entities;
+		EntitiesNamespace = entitiesNamespace;
+    }
+
+    public override string TransformText()
+    {
+#>
+using System;
+<#+ if (!String.IsNullOrEmpty(EntitiesNamespace))
+	{#>
+using <#= EntitiesNamespace #>;
+<#+	} #>
+
+namespace <#= NameSpace #>
+{
+	public static class RepositoryHelper
+	{
+        public static IUnitOfWork GetUnitOfWork(string connectionString = null)
+        {
+            var unitOfWork = new DbContextUnitOfWork(connectionString);
+            unitOfWork.TestConnectionCanOpen();
+            return unitOfWork;
+        }
+
+        public static IRepositoryBase GetRepository<T>(IUnitOfWork unitOfWork) where T : class
+        {
+            var type = typeof(T);
+            return GetRepository(type, unitOfWork);
+        }
+
+        public static IRepositoryBase GetRepository(Type type, IUnitOfWork unitOfWork)
+        {
+<#+
+		foreach (var entity in Entities)
+        {
+#>
+            if (type == typeof(<#= entity #>))
+            {
+				var repository = Get<#= entity #>Repository(unitOfWork);
+                return repository;
+            }
+<#+
+        }
+#>
+            return null;
+        }
+		
+<#+
+		foreach (var entity in Entities)
+        {
+#>
+
+        public static I<#= entity #>Repository Get<#= entity #>Repository()
+        {
+            var unitOfWork = GetUnitOfWork();
+            var repository = Get<#= entity #>Repository(unitOfWork);
+            return repository;
+        }
+		
+        public static I<#= entity #>Repository Get<#= entity #>Repository(IUnitOfWork unitOfWork)
+        {
+            var repository = new <#= entity #>Repository();
+            repository.UnitOfWork = unitOfWork;
+            return repository;
+        }
+<#+
+        }
+#>	
+	}
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class DbContextRepositoryTemplate : BaseTemplate
+{   
+	public DbContextRepositoryTemplate(string nameSpace)
+		: base("DbContextRepository.generated.cs", nameSpace)
+    {
+    }
+
+    public override string TransformText()
+    {
+#>
+using System;
+using System.Data.Entity;
+using System.Linq;
+using System.Linq.Expressions;
+
+namespace <#= NameSpace #>
+{
+    public class DbContextRepository<T> : IRepository<T> where T : class
+    {
+        public IUnitOfWork UnitOfWork { get; set; }
+
+        private DbSet<T> _dbset;
+        private DbSet<T> DbSet
+        {
+            get
+            {
+                if (_dbset == null)
+                {
+                    _dbset = UnitOfWork.Context.Set<T>();
+                }
+                return _dbset;
+            }
+        }
+
+        public void AddObject(object entity)
+        {
+            if (entity is T)
+            {
+                Add((T)entity);
+            }
+        }
+
+        public void UpdateObject(object entity)
+        {
+            if (entity is T)
+            {
+                Update((T)entity);
+            }
+        }
+
+        public virtual IQueryable<T> All()
+        {
+            return DbSet.AsQueryable();
+        }
+
+        public IQueryable<T> Where(Expression<Func<T, bool>> expression)
+        {
+            return DbSet.Where(expression);
+        }
+
+		public T FirstOrDefault(Expression<Func<T, bool>> expression)
+		{
+            return DbSet.FirstOrDefault(expression);
+		}
+
+        public void Add(T entity)
+        {
+			DbSet.Add(entity);
+        }
+
+        public void Delete(T entity)
+        {
+            DbSet.Remove(entity);
+        }
+
+        public void Delete(Expression<Func<T, bool>> expression)
+        {
+            var objects = Where(expression);
+            foreach (var obj in objects)
+			{
+                Delete(obj);
+			}
+		}
+
+        public void Update(T entity)
+        {
+            //UnitOfWork.Context.Entry<T>(entity).State = System.Data.EntityState.Modified;
+            var entry = UnitOfWork.Context.Entry<T>(entity);
+            DbSet.Attach(entity);
+            entry.State = System.Data.EntityState.Modified;
+        }
+    }
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class EntityRepositoryTemplate : BaseTemplate
+{   
+    public string Name { get; set; }
+    public string EntitiesNamespace { get; set; }
+	public EntityRepositoryTemplate(string entityName, string nameSpace, string entitiesNamespace)
+		: base (string.Format("{0}Repository.cs", entityName), nameSpace)
+    {
+		Name = entityName;
+		EntitiesNamespace = entitiesNamespace;
+    }
+
+    public override string TransformText()
+    {
+#>
+using System.Linq;
+using System.Linq.Expressions;
+<#+ if (!String.IsNullOrEmpty(EntitiesNamespace))
+	{#>
+using <#= EntitiesNamespace #>;
+<#+	} #>
+	
+namespace <#= NameSpace #>
+{   
+	public partial interface I<#= Name #>Repository : IRepository<<#= Name #>>
+	{
+		<#= Name #> GetById(int id);
+	}
+	
+	public partial class <#= Name #>Repository : DbContextRepository<<#= Name #>>, I<#= Name #>Repository
+	{
+        public <#= Name #> GetById(int id)
+        {
+            return FirstOrDefault(x => x.Id == id);
+        }
+	}
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public class DbContextUnitOfWorkTemplate : BaseTemplate
+{   
+    public string DbContextName { get; set; }
+    public string ContextNamespace { get; set; }
+	public DbContextUnitOfWorkTemplate(string dbContextName, string contextNamespace, string nameSpace)
+		: base("DbContextUnitOfWork.generated.cs", nameSpace)
+    {
+		DbContextName = dbContextName;
+		ContextNamespace = contextNamespace;
+    }
+
+    public override string TransformText()
+    {
+#>
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Objects;
+using System.Linq;
+using System.Data.EntityClient;
+using System.Data.SqlClient;
+using System.Threading;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
+using <#= ContextNamespace #>;
+
+namespace <#= NameSpace #>
+{
+	public class DbContextUnitOfWork : IUnitOfWork
+	{
+		public DbContext Context { get; set; }
+
+		public string ConnectionString
+		{
+			get { return Context.Database.Connection.ConnectionString; }
+			set { Context.Database.Connection.ConnectionString = value; }
+		}
+		
+		public bool LazyLoadingEnabled { get; set; }
+
+        public bool ProxyCreationEnabled { get; set; }
+
+		public DbContextUnitOfWork(string connectionString = null)
+		{
+            if (String.IsNullOrWhiteSpace(connectionString))
+                Context = new <#= DbContextName #>();
+            else
+    			Context = new <#= DbContextName #>(connectionString);
+		}
+
+        /// <summary>
+        /// Opens and Closes the connection.
+        /// Will throw an Exception if it cannot open the connection.
+        /// Will try up to 3 times.
+        /// </summary>
+        /// <exception cref="EntityException">Thrown when the connection cannot open</exception>
+        /// <exception cref="SqlException">Thrown when the connection cannot open</exception>
+        public void TestConnectionCanOpen()
+        {
+            var opened = false;
+            var retry = true;
+            var count = 0;
+            while (retry && count < 5)
+            {
+                try
+                {
+                    Context.Database.Connection.Open();
+                    retry = false;
+                    opened = true;
+                    Context.Database.Connection.Close();
+                }
+                catch
+                {
+                    retry = true;
+                    Thread.Sleep(5000);
+                    count++;
+                }
+            }
+
+            if (!opened)
+            {
+                try
+                {
+                    Context.Database.Connection.Open();
+                    Context.Database.Connection.Close();
+                }
+                catch (Exception ex)
+                {
+                    throw ex;
+                }
+            }
+        }
+
+		public void SaveChanges()
+		{
+            try
+            {
+                Context.SaveChanges();
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                throw new ConcurrencyException("The records you attempted to edit or delete"
+                                               + " were modified by another user after you got the original value. The"
+                                               + " operation was canceled.", ex);
+            }
+            catch (DataException ex)
+            {
+                throw new DataException("Unable to save changes.", ex);
+            }
+		}
+		
+        public void DetachDatabase()
+        {
+            EntityConnectionStringBuilder efConnString = new EntityConnectionStringBuilder(ConnectionString);
+            SqlConnectionStringBuilder connString = new SqlConnectionStringBuilder(efConnString.ProviderConnectionString);
+			
+            var dbName = String.IsNullOrEmpty(connString.InitialCatalog) ? connString.AttachDBFilename : connString.InitialCatalog;
+            var query = string.Format("USE [master]{0}ALTER DATABASE [{1}] SET OFFLINE WITH ROLLBACK IMMEDIATE{0}USE [master]{0}EXEC master.dbo.sp_detach_db @dbname = N'{1}'", Environment.NewLine, dbName);
+            Context.Database.ExecuteSqlCommand(query);
+        }
+
+        public bool IsDatabaseSuspended()
+        {
+            EntityConnectionStringBuilder efConnString = new EntityConnectionStringBuilder(ConnectionString);
+            SqlConnectionStringBuilder connString = new SqlConnectionStringBuilder(efConnString.ProviderConnectionString);
+
+            var dbName = String.IsNullOrEmpty(connString.InitialCatalog) ? connString.AttachDBFilename : connString.InitialCatalog;
+            //var retVal = Context.ExecuteStoreQuery<bool>(string.Format("IF EXISTS(SELECT * FROM tempdb.dbo.sysobjects WHERE ID = OBJECT_ID(N'tempdb..#WhoStatusTemp')){0}BEGIN{0}DROP TABLE #WhoStatusTemp{0}END{0}CREATE TABLE #WhoStatusTemp(spid smallint,ecid smallint,[status] nchar(30),loginame nchar(128),hostname nchar(128),blk char(5),dbname nchar(128),cmd nchar(16),request_id int){0}INSERT #WhoStatusTemp EXEC master.sys.sp_who 'active';{0}DECLARE @status bit;{0}SET @status = 0;{0}IF EXISTS(SELECT * FROM #WhoStatusTemp WHERE [status] = 'suspended' AND [dbname] = '{1}'){0}BEGIN{0}SET @status = 1;{0}END{0}SELECT @status;", Environment.NewLine, dbName)).ToList();
+            var query = string.Format("IF EXISTS(SELECT * FROM tempdb.dbo.sysobjects WHERE ID = OBJECT_ID(N'tempdb..#WhoStatusTemp')){0}BEGIN{0}DROP TABLE #WhoStatusTemp{0}END{0}CREATE TABLE #WhoStatusTemp(spid smallint,ecid smallint,[status] nchar(30),loginame nchar(128),hostname nchar(128),blk char(5),dbname nchar(128),cmd nchar(16),request_id int){0}INSERT #WhoStatusTemp EXEC master.sys.sp_who 'active';{0}DECLARE @status int;{0}SET @status = 0;{0}IF EXISTS(SELECT * FROM #WhoStatusTemp WHERE [dbname] = N'{1}'){0}BEGIN{0}SET @status = 1;{0}END{0}SELECT @status;", Environment.NewLine, dbName);
+			var retVal = Context.Database.SqlQuery<int>(query).ToList();
+            return retVal.Count > 1 ? retVal[0] == 1 : false;
+        }
+		
+        public void Dispose()
+        {
+            if (Context.Database.Connection.State == ConnectionState.Open)
+            {
+                Context.Database.Connection.Close();
+            }
+            Context.Dispose();
+            GC.WaitForPendingFinalizers();
+        }
+	}
+}
+<#+
+        return this.GenerationEnvironment.ToString();
+    }
+}
+
+public static class DbContextAnalyser
+{
+	public static IList<string> GetDbSetEntities(ProjectItem item)
+    {
+		return GetNamespaceClassProperties(item);
+    }
+
+	static IList<string> GetNamespaceClassProperties(ProjectItem item)
+	{
+		if(item != null)
+		{
+			var fileCodeModel = item.FileCodeModel;
+			foreach (CodeElement element in fileCodeModel.CodeElements)
+			{
+				if (element.Kind == vsCMElement.vsCMElementNamespace)
+				{
+					foreach (CodeElement elem in ((CodeNamespace)element).Members)
+					{
+						if (elem.Kind == vsCMElement.vsCMElementClass)
+						{
+							//this.WriteLine("// " + ((EnvDTE.CodeClass)elem).Name);
+							return GetClassProperties((EnvDTE.CodeClass)elem);
+						}
+					}
+				}
+			}
+		}
+		return new List<string>();
+	}
+
+	static IList<string> GetClassProperties(CodeClass element)
+	{
+		var props = new List<string>();
+		var properties = element.Members.Cast<CodeElement>().Where(member => member.Kind == vsCMElement.vsCMElementProperty && ((CodeProperty)member).Getter != null && ((CodeProperty)member).Access == vsCMAccess.vsCMAccessPublic && IsDbSet(((CodeProperty)member).Type.CodeType)).ToList();
+		
+		foreach (CodeElement prop in properties)
+		{
+			//this.WriteLine("// " + ((CodeProperty)prop).Name + " [" + GetFullName(((CodeProperty)prop).Type) + "]");
+			//this.WriteLine("// " + GetGenericType(((EnvDTE.CodeProperty)prop).Type.CodeType));
+			props.Add(GetGenericType(((EnvDTE.CodeProperty)prop).Type.CodeType));
+		}
+		return props.Distinct().OrderBy(x=>x).ToList();
+	}
+		
+	static string GetFullName(CodeTypeRef codeType)
+	{
+		string fullName;
+
+		if (codeType.TypeKind == vsCMTypeRef.vsCMTypeRefArray)
+		{
+			CodeTypeRef arrayType = codeType.ElementType;
+			fullName = arrayType.AsFullName + "[]";
+		}
+		else
+		{
+			fullName = codeType.AsFullName;
+		}
+		return fullName;
+	} 
+	
+	static string GetFullName(CodeType codeType)
+	{
+		string fullName;
+
+		fullName = codeType.FullName;
+
+		return fullName;
+	}
+	
+	static bool IsDbSet(CodeType codeType)
+	{
+		return codeType.FullName.Contains("System.Data.Entity.DbSet");
+	}
+	
+	static string GetGenericType(CodeType codeType)
+	{
+		string fullName = null;
+
+		fullName = codeType.FullName;
+		var split = fullName.Split(new char[] { '<', '>' }, StringSplitOptions.RemoveEmptyEntries);
+		if(split.Length == 2)
+		{
+			fullName = split[1].Substring(split[1].LastIndexOf('.') + 1);
+		}
+
+		return fullName;
+	}
+}
+
+public static class TemplateHelper
+{
+	public static void DeleteOldOutputs(ITextTemplatingEngineHost host)
+	{
+		ProjectItem templateProjectItem = GetTemplateProjectItem(host);
+		foreach (ProjectItem childProjectItem in templateProjectItem.ProjectItems)
+		{
+			//if (!__savedOutputs.Contains(childProjectItem.Name))
+			childProjectItem.Delete();
+		}
+	}  
+
+	public static void SaveTemplateOutputToTemplate(BaseTemplate template, ITextTemplatingEngineHost parentHost, bool overwriteExisting)
+	{
+		string templateDirectory = Path.GetDirectoryName(parentHost.TemplateFile);
+		string outputFilePath = Path.Combine(templateDirectory, template.FileName); 
+		ProjectItem templateProjectItem = GetTemplateProjectItem(parentHost); 
+
+		ProjectItem existingItem  = null;
+		try
+        {
+			existingItem = templateProjectItem.ProjectItems.Item(template.FileName);
+        }
+		catch{}
+
+		if(existingItem != null)
+        {
+			if(!overwriteExisting)
+			{
+				return;
+			}
+			existingItem.Delete();
+        }
+
+		File.WriteAllText(outputFilePath, template.TransformText());
+		templateProjectItem.ProjectItems.AddFromFile(outputFilePath);
+	}
+
+	public static void SaveTemplateOutputToProject(BaseTemplate template, Project project, bool overwriteExisting)
+	{
+		string projectDirectory = Path.GetDirectoryName(project.FileName);
+		string outputFilePath = Path.Combine(projectDirectory, template.FileName);
+		
+		ProjectItem existingItem  = null;
+		try
+        {
+			existingItem = project.ProjectItems.Item(template.FileName);
+        }
+		catch{}
+
+		if(existingItem != null)
+        {
+			if(!overwriteExisting)
+			{
+				return;
+			}
+			existingItem.Delete();
+        }
+
+		System.IO.File.WriteAllText(outputFilePath, template.TransformText());
+		project.ProjectItems.AddFromFile(outputFilePath);
+	}
+
+    public static void WriteTemplateOutputToFile(string relativeOutputFilePath, ITextTemplatingEngineHost parentHost, StringBuilder GenerationEnvironment)
+    {
+        string outputPath = System.IO.Path.GetDirectoryName(parentHost.TemplateFile);
+        string outputFilePath = Path.Combine(outputPath, relativeOutputFilePath);
+        System.IO.File.WriteAllText(outputFilePath, GenerationEnvironment.ToString());
+    }
+
+    public static String GetCustomToolNamespace(ITextTemplatingEngineHost host)
+	{
+        return GetTemplateProjectItem(host).Properties.Item("CustomToolNamespace").Value.ToString();
+    }
+		
+	/// <Summary> Get the Visual Studio ProjectItem of the Input file path </Summary>
+	public static ProjectItem GetProjectItem(string path, ITextTemplatingEngineHost host)
+	{
+		//this.WriteLine("//Item Path: " + path);
+		var dte = GetDTEObject(host);
+		//this.WriteLine("//Sol Name: " + dte.Solution.FullName);
+		var myProjectItem =  dte.Solution.FindProjectItem(path);	
+		//this.WriteLine("//Item Name: " + myProjectItem.Name);
+		return  myProjectItem.Collection.Parent as EnvDTE.ProjectItem;
+	}
+		
+	/// <Summary> Get the Visual Studio ProjectItem of the Input project and file</Summary>
+	public static Project GetProject(string projectName, ITextTemplatingEngineHost host)
+	{
+		//this.WriteLine("//projectName: " + projectName);
+		//this.WriteLine("//fileName: " + fileName);
+		var dte = GetDTEObject(host);
+		Project project = null;
+		foreach (Project item in dte.Solution.Projects)
+		{
+			if(item.Name == projectName)
+			{
+				project = item;
+				break;
+			}
+		}
+		return project;
+	}
+		
+	/// <Summary> Get the Visual Studio ProjectItem of the Input project and file</Summary>
+	public static ProjectItem GetProjectItem(Project project, string fileName, ITextTemplatingEngineHost host)
+	{
+		ProjectItem item = null;
+		if(project != null)
+		{
+			var items = GetProjectItemsRecursively(project.ProjectItems);
+			foreach(var projItem in items)
+            {
+				var name = projItem.Name;
+				if(fileName.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+					item = projItem;
+					break;
+                }
+            }
+
+			//this.WriteLine("//Project Name: " + project.Name);
+			//ProjectItem item = project.ProjectItems.Item(fileName);
+			//if(item != null)
+			//{
+			//	//this.WriteLine("//File Name: " + item.Name);
+			//	return item;
+			//}
+		}
+		return item;
+	}
+
+	public static List<EnvDTE.ProjectItem> GetProjectItemsRecursively(EnvDTE.ProjectItems items)
+	{
+		var ret = new List<EnvDTE.ProjectItem>();
+		if (items == null) return ret;
+		foreach(EnvDTE.ProjectItem item in items)
+		{
+			ret.Add(item);
+			ret.AddRange(GetProjectItemsRecursively(item.ProjectItems));
+		}
+		return ret;
+	}
+
+	/// <Summary> Get the FilePath of the Input file for this dependent T4 file </Summary>
+	static string GetTemplateFilePath(ITextTemplatingEngineHost host)
+	{
+		return GetTemplateProjectItem(host).Properties.Item("FullPath").Value.ToString();
+	}
+
+	/// <Summary> Get the FilePath of the Input file for this dependent T4 file </Summary>
+	public static Project GetTemplateProject(ITextTemplatingEngineHost host)
+	{
+		return GetTemplateProjectItem(host).ContainingProject;
+
+	}
+
+	/// <Summary> Gets the FileCodeModel which contains method definitons etc. for the Input File - e.g. if it is C# or VB File  </Summary>
+	static FileCodeModel GetTemplateFileCodeModel(ITextTemplatingEngineHost host)
+	{
+		return GetTemplateProjectItem(host).FileCodeModel;
+	}
+
+	/// <Summary> Get the Visual Studio ProjectItem of the Input file for this dependent T4 file </Summary>
+	static ProjectItem GetTemplateProjectItem(ITextTemplatingEngineHost host)
+	{
+		var dte = GetDTEObject(host);
+		return dte.Solution.FindProjectItem(host.TemplateFile);	
+		//var myProjectItem =  dte.Solution.FindProjectItem(host.TemplateFile);	
+		//return  myProjectItem.Collection.Parent as EnvDTE.ProjectItem;
+	}
+
+	/// <Summary> Get the Visual Studio Automation Object</Summary>
+	public static EnvDTE.DTE GetDTEObject(ITextTemplatingEngineHost host)
+	{	
+		var hostServiceProvider = host as IServiceProvider;
+		if (hostServiceProvider == null)
+        {
+			throw new ArgumentNullException("Could not obtain hostServiceProvider");
+		}
+		//var hostServiceProvider = host as IServiceProvider;
+		EnvDTE.DTE dte = null;
+		if (hostServiceProvider != null)
+		{
+			dte = hostServiceProvider.GetService(typeof(EnvDTE.DTE)) as EnvDTE.DTE;
+		}
+		if (dte == null)
+        {
+	        throw new ArgumentNullException("Could not obtain DTE from host");
+        }
+		return dte;
+	}
+}
+#>

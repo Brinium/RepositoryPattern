@@ -6,11 +6,11 @@ using System.Text;
 using System.Threading.Tasks;
 using DataAccess.Entities;
 
-namespace DataAccess
+namespace DataAccess.Repository.DapperContrib
 {
     public class ReposEFContext : DbContext
     {
-        static ReposEFContext()
+        public ReposEFContext()
         {
         }
 

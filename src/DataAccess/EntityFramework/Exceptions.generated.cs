@@ -3,7 +3,7 @@ using System.Data.Entity;
 using System.Linq;
 using System.Linq.Expressions;
 
-namespace DataAccess.Repository
+namespace DataAccess.Repository.EntityFramework
 {
     [System.Serializable]
     public class ConcurrencyException : System.Exception

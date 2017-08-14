@@ -1,7 +1,7 @@
 using System.Linq;
 using System.Linq.Expressions;
 using DataAccess.Entities;
-	
+
 namespace DataAccess.Repository.DapperContrib
 {   
 	public partial interface IPersonRepository : IRepository<Person>

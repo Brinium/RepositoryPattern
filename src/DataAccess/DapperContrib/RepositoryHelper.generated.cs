@@ -1,7 +1,7 @@
 using System;
 using DataAccess.Entities;
 
-namespace DataAccess.Repository
+namespace DataAccess.Repository.DapperContrib
 {
 	public static class RepositoryHelper
 	{

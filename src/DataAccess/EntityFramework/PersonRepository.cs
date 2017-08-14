@@ -1,8 +1,8 @@
 using System.Linq;
 using System.Linq.Expressions;
 using DataAccess.Entities;
-	
-namespace DataAccess.Repository.DapperContrib
+
+namespace DataAccess.Repository.EntityFramework
 {   
 	public partial interface IPersonRepository : IRepository<Person>
 	{
